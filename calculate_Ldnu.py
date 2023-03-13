@@ -1,6 +1,6 @@
 import numpy as np
 import os
-from math import pi, log10, cos
+from math import pi, log10, cos, sin, acos
 import constCGS
 
 ##### import parameters
@@ -16,6 +16,7 @@ with open(os.path.join(folder, 'arrays_info.txt'), 'r') as file:
     tarr_info = file.readline().strip('\n').split()
     rarr_info = file.readline().strip('\n').split()
     aarr_info = file.readline().strip('\n').split()
+    thetaarr_info = file.readline().strip('\n').split()
 
 # emissvity 
 with open(os.path.join(folder, 'emissivity.txt'), 'r') as file:
@@ -47,16 +48,20 @@ if aarr_info[1] == 'linear':
 elif aarr_info[1] == 'logarithmic':
     aarr = np.logspace(log10(ast), log10(aend), Na)
 
+# thetaarr: polar angle
+thetast, thetaend, Ntheta = float(thetaarr_info[2]), float(thetaarr_info[3]), int(thetaarr_info[4])
+thetaarr = np.linspace(thetast, thetaend, Ntheta)
+
+# phiarr: azimuthal angle
+phiarr = np.linspace(0, 2*pi, Nphi) # rad
+
 # observation frequency
 lambobsarr = np.linspace(lambobsmin, lambobsmax, Nnuobs) # um
 nuobsarr = constCGS.C_LIGHT/(lambobsarr/constCGS.cm2um) # in Hz
 
 # observation time
-# tobsmin = robsmin*constCGS.pc2cm/constCGS.C_LIGHT*(1-cos(max(0, 4*pi/180)))
-# tobsmin = robsmin*constCGS.pc2cm/constCGS.C_LIGHT
-# tobsmax = robsmax*constCGS.pc2cm/constCGS.C_LIGHT
-# tobsmax = 4e3*tobsmin
 tobsarr = np.logspace(log10(tobsmin), log10(tobsmax), Ntobs)
+# tobsarr = np.linspace(tobsmin, tobsmax, Ntobs)
 
 # specific luminosity
 Ldnuarr = np.zeros((Nnuobs, Ntobs), dtype=float)
@@ -64,47 +69,52 @@ Ldnuarr = np.zeros((Nnuobs, Ntobs), dtype=float)
 ##### functions
 
 # linear interpolation of the emissivity at a given distance
-def jdnu_intp(t, i_r, i_nuobs):
+def jdnu_intp(t, i_r, i_theta, i_nuobs):
     i_floor = np.argmin(np.abs(t - tarr))
     if t > tarr[-1] + (tarr[-1] - tarr[-2]):
         return 0
     if tarr[i_floor] == t:
-        return jdnuarr[i_floor, i_r, i_nuobs]
+        return jdnuarr[i_floor, i_r, i_theta, i_nuobs]
     if (tarr[i_floor] > t and i_floor > 0) or i_floor == Nt-1:
         i_floor -= 1
-    slope = (jdnuarr[i_floor+1, i_r, i_nuobs] - jdnuarr[i_floor, i_r, i_nuobs])/(tarr[i_floor+1] - tarr[i_floor])
-    return max(jdnuarr[i_floor, i_r, i_nuobs] + slope * (t - tarr[i_floor]), 0)
+    slope = (jdnuarr[i_floor+1, i_r, i_theta, i_nuobs] - jdnuarr[i_floor, i_r, i_theta, i_nuobs])/(tarr[i_floor+1] - tarr[i_floor])
+    return max(jdnuarr[i_floor, i_r, i_theta, i_nuobs] + slope * (t - tarr[i_floor]), 0)
 
 # calculate mu from tobs and t, Eq. 27
-def mu(rcm, tobs, i_t):
-    return 1 - constCGS.C_LIGHT*(tobs - tarr[i_t])/rcm
+def mu(theta, phi, thetaobs):
+    return cos(theta)*cos(phi)*sin(thetaobs) + sin(theta)*cos(thetaobs)
 
 # solve tobs at a given r from mu
-def musolve_t(mu, rcm, tobs):
-    return tobs - rcm/constCGS.C_LIGHT*(1 - mu)
+def mu2t(mu, rcm, tobs):
+    return tobs - rcm/constCGS.C_LIGHT*(1-mu)
 
 # specifc luminosity, Eq.28
 def lum_dnu(tobs, i_nuobs):
-    r_integral = 0
+    integral = 0
     for i_r in range(Nr-1):
         rcm = rarr[i_r]*constCGS.pc2cm
         drcm = (rarr[i_r+1] - rarr[i_r])*constCGS.pc2cm
-        # light echo has already passed
-        if rcm < max(0, 2*constCGS.C_LIGHT*(tobs-tmax)):
+        # light echo has already passed or light has not arrived
+        if rcm < constCGS.C_LIGHT*(tobs-tdur)/2 or rcm > constCGS.C_LIGHT*(tobs-tmin):
+            # print(i_r, 'min: {:.3f}pc, r: {:.3f}pc'.format(constCGS.C_LIGHT*(tobs-tmin)/constCGS.pc2cm, rarr[i_r]))
             continue 
-        # 1e-10 is added to account for calculation instability that may cause t < 0
-        mumin = 1 - constCGS.C_LIGHT*tobs/rcm + 1e-10
-        # mumax = min(1 - constCGS.C_LIGHT*(tobs - tdur)/rcm, 1)
-        mumax = 1 - constCGS.C_LIGHT*(tobs - tdur)/rcm
-        mu_integral = 0
-        muarr = np.linspace(mumin, mumax, Nmu)
-        for i_mu in range(Nmu - 1):
-            dmu = muarr[i_mu+1] - muarr[i_mu]
-            t = musolve_t(muarr[i_mu], rcm, tobs)
-            mu_integral += dmu * jdnu_intp(t, i_r, i_nuobs)
-        r_integral += mu_integral * rcm**2 * drcm
-    return 8 * pi**2 * r_integral
-
+        # print(i_r, 'min: {:.3f}pc, r: {:.3f}pc'.format(constCGS.C_LIGHT*(tobs-tmin)/constCGS.pc2cm, rarr[i_r]))
+        ang_integral = 0
+        for i_theta in range(Ntheta-1):
+            theta = thetaarr[i_theta]
+            dtheta = thetaarr[i_theta+1] - theta
+            for i_phi in range(Nphi-1):
+                phi = phiarr[i_phi]
+                dphi = phiarr[i_phi+1] - phi
+                mu_pos = mu(theta, phi, thetaobs)
+                mu_neg = mu(-theta, phi, thetaobs)
+                if (t_pos := mu2t(mu_pos, rcm, tobs) > 0):
+                    ang_integral += cos(theta) * dtheta * dphi * jdnu_intp(t_pos, i_r, i_theta, i_nuobs)
+                if (t_neg := mu2t(mu_neg, rcm, tobs) > 0):
+                    ang_integral += cos(theta) * dtheta * dphi * jdnu_intp(t_neg, i_r, i_theta, i_nuobs)
+        integral += rcm**2 * ang_integral * drcm
+        return 4 * pi * integral
+            
 ##### calculate specific luminosity
 
 print('Calculating...')
@@ -124,7 +134,7 @@ print('{:.2%}'.format(1))
 print('\nSaving data...')
 
 Ldnuarr_shape = '{}\t{}\n'.format(Nnuobs, Ntobs)
-with open(os.path.join(folder, 'specific_luminosity_tobsmax{:.2e}.txt'.format(tobsmax)), 'w') as file:
+with open(os.path.join(folder, 'specific_luminosity.txt'), 'w') as file:
     file.write(Ldnuarr_shape)
     np.savetxt(file, Ldnuarr)
 
