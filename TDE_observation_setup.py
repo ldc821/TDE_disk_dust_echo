@@ -14,4 +14,4 @@ Ntobs = 100
 tobsmin = 100
 tobsmax = 200*constCGS.pc2cm/constCGS.C_LIGHT
 
-thetaobs = pi/4 # observation angle
+thetaobs = pi/2 # observation angle
