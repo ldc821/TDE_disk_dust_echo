@@ -20,10 +20,14 @@ with open(os.path.join(folder, 'arrays_info.txt'), 'r') as file:
     tarr_info = file.readline().strip('\n').split()
     rarr_info = file.readline().strip('\n').split()
     aarr_info = file.readline().strip('\n').split()
+    thetaarr_info = file.readline().strip('\n').split()
 
 # sublimation radius
 with open(os.path.join(folder, 'sublimation_radius.txt'), 'r') as file:
-    asubarr = np.loadtxt(file, skiprows=1)
+    asubarr_shape = file.readline().strip('\n').split()
+    asubarr = np.loadtxt(file)
+asubarr_shape = [int(shape) for shape in asubarr_shape]
+asubarr = np.reshape(asubarr, asubarr_shape)
 
 ##### discretization
 
@@ -48,6 +52,10 @@ if aarr_info[1] == 'linear':
 elif aarr_info[1] == 'logarithmic':
     aarr = np.logspace(log10(ast), log10(aend), Na)
 
+# thetaarr
+thetast, thetaend, Ntheta = float(thetaarr_info[2]), float(thetaarr_info[3]), int(thetaarr_info[4])
+thetaarr = np.linspace(thetast, thetaend, Ntheta)
+
 # dust temperature
 with open(os.path.join(folder, 'dust_temperature.txt'), 'r') as file:
     Tarr_shape = file.readline().strip('\n').split()
@@ -60,23 +68,23 @@ lambobsarr = np.linspace(lambobsmin, lambobsmax, Nnuobs) # um
 nuobsarr = constCGS.C_LIGHT/(lambobsarr/constCGS.cm2um) # in Hz
 
 # emissivity
-jdnuarr = np.zeros((Nt, Nr, Nnuobs), dtype=float)
+jdnuarr = np.zeros((Nt, Nr, Ntheta, Nnuobs), dtype=float)
 
 ##### functions
 
 # H number density 
 # power law, assuming spherical symmetry
-def nH(r):
-    return nH0*(r/rmin)**(densprof)
+def nH(r, theta):
+    return nH0*(r/rmin)**(-alpha)*exp(-beta*theta)
 
 # normalization constant 
-def n0(r):
-    return nH(r)*n02nH 
+def n0(r, theta):
+    return nH(r, theta)*n02nH 
 
 # emissivity, Eq.25
-def jdnu(nu, i_r, i_t):
+def jdnu(nu, i_r, i_theta, i_t):
     lamb = constCGS.C_LIGHT/nu*constCGS.cm2um   
-    asub = asubarr[i_t, i_r]
+    asub = asubarr[i_t, i_r, i_theta]
     integral = 0
     for i in range(Na-1):
         # if aarr[i] <= asub or Tarr[i_t, i_r, i] < 100:
@@ -85,10 +93,10 @@ def jdnu(nu, i_r, i_t):
         aum = aarr[i]
         daum = aarr[i+1] - aarr[i]
         try:
-            integral += daum*aum**(-0.5)/(aum + (lamb/lamb0)**2)/(exp(constCGS.H_PLANCK*nu/constCGS.K_B/Tarr[i_t, i_r, i]) - 1)
+            integral += daum*aum**(-0.5)/(aum + (lamb/lamb0)**2)/(exp(constCGS.H_PLANCK*nu/constCGS.K_B/Tarr[i_t, i_r, i_theta, i]) - 1)
         except OverflowError: # the temperature is too low
             continue 
-    jdnu = integral*2*pi*constCGS.H_PLANCK*nu*n0(rarr[i_r])/lamb**2
+    jdnu = integral*2*pi*constCGS.H_PLANCK*nu*n0(rarr[i_r], thetaarr[i_theta])/lamb**2
     return jdnu
 
 ##### calculate emissivity
@@ -98,8 +106,9 @@ progress = 0
 
 for i_t in range(Nt):
     for i_nu in range(Nnuobs):
-        for i_r in range(Nr):
-            jdnuarr[i_t, i_r, i_nu] = jdnu(nuobsarr[i_nu], i_r, i_t)
+        for i_theta in range(Ntheta):
+            for i_r in range(Nr):
+                jdnuarr[i_t, i_r, i_theta, i_nu] = jdnu(nuobsarr[i_nu], i_r, i_theta, i_t)
     if i_t/Nt > progress:
         print('{:.2%}'.format(i_t/Nt))
         progress += 0.1
@@ -110,7 +119,7 @@ print('{:.2%}'.format(1))
 
 print('\nSaving data...')
 
-jdnuarr_shape = '{}\t{}\t{}\n'.format(Nt, Nr, Nnuobs)
+jdnuarr_shape = '{}\t{}\t{}\t{}\n'.format(Nt, Nr, Ntheta, Nnuobs)
 with open(os.path.join(folder, 'emissivity.txt'), 'w') as file:
     file.write(jdnuarr_shape)
     np.savetxt(file, jdnuarr.reshape(Nt, -1))

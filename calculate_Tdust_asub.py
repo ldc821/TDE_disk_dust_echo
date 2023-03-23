@@ -5,7 +5,6 @@ import os
 ##### import constants and TDE parameters
 import constCGS
 from TDE_parameters import *
-# from PTF09ge_parameters import *
 
 ##### discretization 
 
@@ -16,6 +15,9 @@ aarr = np.linspace(amin, amax, Na)
 rarr = np.logspace(log10(rmin), log10(rmax), Nr)
 # rarr = np.linspace(rmin, rmax, Nr)
 
+# azimuthal angle
+thetaarr = np.linspace(thetamin, thetamax, Ntheta)
+
 # time 
 tarr = np.linspace(tmin, tmax, Nt, endpoint=False)
 tarr += (tarr[1] - tarr[0])/2.
@@ -24,20 +26,20 @@ tarr += (tarr[1] - tarr[0])/2.
 numin, numax = hnumin*constCGS.eV2erg/constCGS.H_PLANCK, hnumax*constCGS.eV2erg/constCGS.H_PLANCK
 nuarrlog = np.logspace(log10(numin), log10(numax), Nnu)
 
-Tarr = np.zeros((Nt, Nr, Na), dtype=float)   # dust temperature
-asubarr = np.full((Nt, Nr), amin)            # sublimation radii
-taudarr = np.zeros((Nnu, Nr), dtype=float)   # dust extinction optical depth at each nu
+Tarr = np.zeros((Nt, Nr, Ntheta, Na), dtype=float)   # dust temperature
+asubarr = np.full((Nt, Nr, Ntheta), amin)            # sublimation radii
+taudarr = np.zeros((Nnu, Nr, Ntheta), dtype=float)   # dust extinction optical depth at each nu
 
 ##### functions
 
 # H number density 
-# power law, assuming spherical symmetry
-def nH(r):
-    return nH0*(r/rmin)**(densprof)
+# disk distribution
+# def nH(r,theta):
+#     return nH0*(r/rmin)**(-alpha)*exp(-beta*theta)
 
-# normalization constant 
-def n0(r):
-    return nH(r)*n02nH 
+# # normalization constant 
+# def n0(r,theta):
+#     return nH(r,theta)*n02nH 
 
 # absorption efficiency factor, Eq.11
 # dimensionless 
@@ -57,42 +59,30 @@ def lumV(t, nu):
     surfa = 4*pi*(lumr*constCGS.au2cm)**2
     return B_nuT*surfa*4*pi
 
-######## ASASSN-14li
-# def lumV(t, nu):
-#     if t > tdur:
-#         return 0.
-#     try:
-#         B_nuT = 2*constCGS.H_PLANCK*nu**3/constCGS.C_LIGHT**2/(exp(constCGS.H_PLANCK*nu/constCGS.K_B/T_tde) - 1)
-#     except OverflowError:
-#         B_nuT = float(0)
-#     surfa = 4*pi*(lumr*constCGS.au2cm)**2
-#     return B_nuT*surfa*4*pi*exp(-t/t0)
-
-
 # dust extinction optical depth, Eq.24
 # quantities are converted to cgs units
 # note that amax, asub are dimensionless here
-def taud(nu, i_t, i_r, amax, asubarr):
+def taud(nu, i_t, i_r, i_theta, amax, asubarr):
     lamb = constCGS.C_LIGHT/nu*constCGS.cm2um   
     xmax = amax*(lamb0/lamb)**2
     integral = 0
     for i in range(i_r-1):
         r = rarr[i]
-        xsub = asubarr[i_t, i]*(lamb0/lamb)**2
+        xsub = asubarr[i_t, i, i_theta]*(lamb0/lamb)**2
         dr = rarr[i+1] - rarr[i]
-        integral += dr*constCGS.pc2cm*n0(r)*(atan(sqrt(0.5*xmax)) - atan(sqrt(0.5*xsub)))
-    taud = 2*sqrt(2)*pi*(lamb0/lamb)*integral/(constCGS.cm2um**2)
+        integral += dr*constCGS.pc2cm*(r/rmin)**(-alpha)*(atan(sqrt(0.5*xmax)) - atan(sqrt(0.5*xsub)))
+    taud = 2*sqrt(2)*pi*(lamb0/lamb)*n02nH*nH0*exp(-beta*thetaarr[i_theta])*integral/(constCGS.cm2um**2)
     return taud
 
 # heating rate, Eq.14
-def qdot_h(t, i_r, aum, taudarr):
+def qdot_h(t, i_r, i_theta, aum, taudarr):
     qdot_h = 0
     rcm = rarr[i_r]*constCGS.pc2cm
     acm = aum/constCGS.cm2um
     for i_nu in range(Nnu-1):
         dnu = nuarrlog[i_nu+1] - nuarrlog[i_nu]
         Cabs = pi*acm**2*Qabs(nuarrlog[i_nu],aum)
-        qdot_h += dnu*lumV(t, nuarrlog[i_nu])*exp(-taudarr[i_nu, i_r])/(4*pi*rcm**2)*Cabs
+        qdot_h += dnu*lumV(t, nuarrlog[i_nu])*exp(-taudarr[i_nu, i_r, i_theta])/(4*pi*rcm**2)*Cabs
     return qdot_h
 
 # dust temperature, Eq.19
@@ -114,18 +104,19 @@ def r_sub(i_t, Tarr, taudarr, asubarr):
     asub = amin
     t = tarr[i_t]
     for i_r in range(Nr):
-        for i_a in range(Na):
-            aum = aarr[i_a]
-            T = T_d(qdot_h(t, i_r, aum, taudarr), aum)
-            if T > T_sub(t, aum):
-                asub = aum
-                Tarr[i_t, i_r, i_a] = 0.
+        for i_theta in range(Ntheta):
+            for i_a in range(Na):
+                aum = aarr[i_a]
+                T = T_d(qdot_h(t, i_r, i_theta, aum, taudarr), aum)
+                if T > T_sub(t, aum):
+                    asub = aum
+                    Tarr[i_t, i_r, i_theta, i_a] = 0.
+                else:
+                    Tarr[i_t, i_r, i_theta, i_a] = T
+            if i_t == 0:
+                asubarr[i_t, i_r, i_theta] = asub
             else:
-                Tarr[i_t, i_r, i_a] = T
-        if i_t == 0:
-            asubarr[i_t, i_r] = asub
-        else:
-            asubarr[i_t, i_r] = max(asub, asubarr[i_t-1, i_r])
+                asubarr[i_t, i_r, i_theta] = max(asub, asubarr[i_t-1, i_r, i_theta])
     return
     
 # update dust extinction
@@ -133,8 +124,9 @@ def r_sub(i_t, Tarr, taudarr, asubarr):
 def taud_update(i_t, asubarr, taudarr):
     for i_nu in range(Nnu):
         nu = nuarrlog[i_nu]
-        for i_r in range(Nr):
-            taudarr[i_nu, i_r] = taud(nu, i_t, i_r, amax, asubarr)
+        for i_theta in range(Ntheta):
+            for i_r in range(Nr):
+                taudarr[i_nu, i_r, i_theta] = taud(nu, i_t, i_r, i_theta, amax, asubarr)
     return
 
 ##### calculate dust temprature
@@ -147,15 +139,16 @@ for i_t in range(Nt):
     n_iter = 0
     while frac_diff > tol:
         n_iter += 1
-        asubold = np.copy(asubarr[i_t])
+        asubold = np.copy(asubarr[i_t, :, 0])
         r_sub(i_t, Tarr, taudarr, asubarr)
         taud_update(i_t, asubarr, taudarr)
         frac_diff = 0
         for j in range(Nr):
-            frac_diff = max(frac_diff, abs(asubold[j] - asubarr[i_t, j])/asubarr[i_t, j])
+            frac_diff = max(frac_diff, abs(asubold[j] - asubarr[i_t, j, 0])/asubarr[i_t, j, 0])
     if i_t/Nt > progress:
         print('{:.2%}...t = {:.2e}s, iteration = {:d}'.format(i_t/Nt, tarr[i_t], n_iter))
         progress += 0.1
+print('{:.2%}'.format(1))
 
 ##### save data to a file
 
@@ -170,17 +163,18 @@ with open(os.path.join(folder, 'arrays_info.txt'), 'w') as file:
     file.write('{:>16}{:>16}{:>16f}{:>16f}{:>16d}\n'.format('tarr', 'linear', tmin, tmax, Nt))
     file.write('{:>16}{:>16}{:>16f}{:>16f}{:>16d}\n'.format('rarr', 'logarithmic', rmin, rmax, Nr))
     file.write('{:>16}{:>16}{:>16f}{:>16f}{:>16d}\n'.format('aarr', 'linear', amin, amax, Na))
+    file.write('{:>16}{:>16}{:>16f}{:>16f}{:>16d}\n'.format('thetaarr', 'linear', thetamin, thetamax, Ntheta))
 
-# Td_shape = '{:>5d}{:>5d}{:>5d}'.format(Nt, Nr, Na)
-Td_shape = '{}\t{}\t{}\n'.format(Nt, Nr, Na)
+Td_shape = '{}\t{}\t{}\t{}\n'.format(Nt, Nr, Ntheta, Na)
 with open(os.path.join(folder, 'dust_temperature.txt'), 'w') as file:
     file.write(Td_shape)
     np.savetxt(file, Tarr.reshape(Nt, -1))
 
 # asub_shape = '{:>5d}{:>5d}'.format(Nr, Na)
-asub_shape = '{}\t{}\n'.format(Nr, Na)
+# asub_shape = '{}\t{}\t{}\n'.format(Nr, Ntheta, Na)
+asub_shape = '{}\t{}\t{}\n'.format(Nt, Nr, Ntheta)
 with open(os.path.join(folder, 'sublimation_radius.txt'), 'w') as file:
     file.write(asub_shape)
-    np.savetxt(file, asubarr)
+    np.savetxt(file, asubarr.reshape(Nt, -1))
 
 print('All done!')

@@ -1,24 +1,17 @@
 ##### model parameters #####
+from math import pi 
 
 # tidal disruption events
-# T_tde = 3e4             # [K], temperature of TDE
-# lumr = 100              # [au], luminous radius of the blackhole
-# tdur = 1e6              # [s], duration of the burst
-
-###### ASASSN-14li
-T_tde = 3.5e4
-lumr = 100
-tdur = 178*24*60
-t0 = 60*24*60
-
-###### PTF-09ge
-# T_tde = 2.2e4
-# lumr = 100
-# tdur = 1e6
+T_tde = 3e4             # [K], temperature of TDE
+lumr = 100              # [au], luminous radius of the blackhole
+tdur = 1e6              # [s], duration of the burst
 
 # dust distribution
 nH0 = 1                # [cm^{-3}], H number density
-densprof = -0.5         # the exponent of the density profile
+alpha = 0.5         # the exponent of the density profile
+beta = 0
+# beta = 1/(pi/4)
+# beta = 1/(pi/6)
 n02nH = 1.45e-15        # n0 over nH(r)
 lamb0 = 2               # [um], critical wavelength
 
@@ -36,11 +29,11 @@ Nt = 50
 hnumin, hnumax = 0.1, 50    # [eV] source frequency
 Nnu = 100
 
+thetamin, thetamax = 0, pi/2
+Ntheta = 20
+
 tol = 0.1                   # fractional tolerance for sublimation radius
 
 ##### folder to store the outputs
-
-# name = "data"
-name = "ASASSN14li"
-# name = "PTF09ge"
-folder = '{}_Ttde{:.1e}_tdur{:.1e}_nH0{:.2e}^{:.2f}_lamb0{:d}um'.format(name, T_tde, tdur, nH0, densprof, lamb0)
+name = "data"
+folder = '{}_T{:.1e}_tdur{:.1e}_nH0{:.2f}_params{:.1f}{:.1f}'.format(name, T_tde, tdur, nH0, alpha, beta)

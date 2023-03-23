@@ -15,6 +15,7 @@ with open(os.path.join(folder, 'arrays_info.txt'), 'r') as file:
     tarr_info = file.readline().strip('\n').split()
     rarr_info = file.readline().strip('\n').split()
     aarr_info = file.readline().strip('\n').split()
+    thetaarr_info = file.readline().strip('\n').split()
 
 # tarr 
 tst, tend, Nt = float(tarr_info[2]), float(tarr_info[3]), int(tarr_info[4])
@@ -41,9 +42,15 @@ elif aarr_info[1] == 'logarithmic':
     aarr = np.logspace(log10(ast), log10(aend), Na)
 # print(aarr)
 
+# thetaarr
+thetast, thetaend, Ntheta = float(thetaarr_info[2]), float(thetaarr_info[3]), int(thetaarr_info[4])
+thetaarr = np.linspace(thetast, thetaend, Ntheta)
+
 # dust temperature
-Tarr_shape = (Nt, Nr, Na)
-Tarr_plt = np.loadtxt(os.path.join(folder, 'dust_temperature.txt'), skiprows=1)
+with open(os.path.join(folder, 'dust_temperature.txt'), 'r') as file:
+    Tarr_shape = file.readline().strip('\n').split()
+    Tarr_plt = np.loadtxt(file)
+Tarr_shape = [int(shape) for shape in Tarr_shape]
 Tarr_plt = np.reshape(Tarr_plt, Tarr_shape)
 
 
@@ -61,18 +68,19 @@ pltt = np.arange(pltt_st, pltt_end, int((pltt_end - pltt_st)/3))
 
 # pltr_st, pltr_end: the indices of the smallest and biggest distances in plot
 # pltr_nonsub: the index of the smallest distance where no dust is sublimated
+i_plttheta = 0
 try: 
-    pltr_st = np.argwhere(Tarr_plt[pltt[0], :, -1] == 0).flatten()[-1]
+    pltr_st = np.argwhere(Tarr_plt[pltt[0], :, 0, -1] == 0).flatten()[-1]
 except IndexError:
     pltr_st = 0
 try:
-    pltr_nonsub = np.argwhere(Tarr_plt[pltt[2], :, 0] != 0).flatten()[0]
+    pltr_nonsub = np.argwhere(Tarr_plt[pltt[2], :, 0, 0] != 0).flatten()[0]
 except IndexError:
     pltr_nonsub = Nr
 pltr_end = Nr
 
 # use different interval for distances with and without sublimation
-pltr = np.append(np.arange(pltr_st, pltr_nonsub, 3), np.arange(pltr_nonsub + 3, pltr_end, 10))
+pltr = np.append(np.arange(pltr_st, pltr_nonsub, 5), np.arange(pltr_nonsub + 3, pltr_end, 10))
 
 # the number of lines to be plotted
 NTplt = len(pltr)
@@ -87,25 +95,25 @@ colors = cm.viridis(np.linspace(0, 1, NTplt))[::-1]
 ##### plot
 fig, ax = plt.subplots(figsize=(10, 7))
 for i_pltr, rcolor in zip(pltr, colors):
-    ax.semilogx(aarr, Tarr_plt[pltt[0], i_pltr, :], ':', color=rcolor, alpha=0.3, linewidth=2)
-    vline1 = np.argwhere(np.isnan(Tarr_plt[pltt[0], i_pltr, :]))
+    ax.semilogx(aarr, Tarr_plt[pltt[0], i_pltr, i_plttheta, :], ':', color=rcolor, alpha=0.3, linewidth=2)
+    vline1 = np.argwhere(np.isnan(Tarr_plt[pltt[0], i_pltr, i_plttheta, :]))
     if (len(vline1) > 0) and (len(vline1) < Na):
         vline1 = max(vline1)+1
-        ax.vlines(x=aarr[vline1], ymin=Tarr_plt[pltt[0], i_pltr, vline1], ymax=Tmax,
+        ax.vlines(x=aarr[vline1], ymin=Tarr_plt[pltt[0], i_pltr, i_plttheta, vline1], ymax=Tmax,
                    ls=':', color='k', alpha=0.3, lw=2)
-    ax.semilogx(aarr, Tarr_plt[pltt[1], i_pltr, :], '--', color=rcolor, alpha=0.6, linewidth=2.5)
-    vline2 = np.argwhere(np.isnan(Tarr_plt[pltt[1], i_pltr, :]))
+    ax.semilogx(aarr, Tarr_plt[pltt[1], i_pltr, i_plttheta, :], '--', color=rcolor, alpha=0.6, linewidth=2.5)
+    vline2 = np.argwhere(np.isnan(Tarr_plt[pltt[1], i_pltr, i_plttheta, :]))
     if (len(vline2) > 0) and (len(vline2) < Na):
         vline2 = max(vline2)+1
-        ax.vlines(x=aarr[vline2], ymin=Tarr_plt[pltt[1], i_pltr, vline2], ymax=Tmax,
+        ax.vlines(x=aarr[vline2], ymin=Tarr_plt[pltt[1], i_pltr, i_plttheta, vline2], ymax=Tmax,
                    ls='--', color='k', alpha=0.6, lw=1.5)
-    ax.semilogx(aarr, Tarr_plt[pltt[2], i_pltr, :], '-', color=rcolor, alpha=1, linewidth=3)
-    vline3 = np.argwhere(np.isnan(Tarr_plt[pltt[2], i_pltr, :]))
+    ax.semilogx(aarr, Tarr_plt[pltt[2], i_pltr, i_plttheta, :], '-', color=rcolor, alpha=1, linewidth=3)
+    vline3 = np.argwhere(np.isnan(Tarr_plt[pltt[2], i_pltr, i_plttheta, :]))
     if (len(vline3) > 0) and (len(vline3) < Na):
         vline3 = max(vline3)+1
-        ax.vlines(x=aarr[vline3], ymin=Tarr_plt[pltt[2], i_pltr, vline3], ymax=Tmax, 
+        ax.vlines(x=aarr[vline3], ymin=Tarr_plt[pltt[2], i_pltr, i_plttheta, vline3], ymax=Tmax, 
                    ls='-', color='k', alpha=0.9, lw=1)
-    ax.text(x=aarr[-1]*1.03, y=Tarr_plt[0, i_pltr, -1], s='{:<3.2f} pc'.format(rarr[i_pltr]), size=10)
+    ax.text(x=aarr[-1]*1.03, y=Tarr_plt[0, i_pltr, i_plttheta, -1], s='{:<3.2f} pc'.format(rarr[i_pltr]), size=10)
 ax.set_xlim(0.7*aarr[0], 1.8*aarr[-1])
 ax.set_xlabel('a [$\\mu m$]', size=15)
 # ax.set_ylim(ymax=Tmax/1e3)
@@ -118,7 +126,7 @@ label_handle2 = ax.vlines(x=[], ymin=[], ymax=[], ls='--', color='k', alpha=0.6,
 label_handle3 = ax.vlines(x=[], ymin=[], ymax=[], ls='-', color='k', alpha=0.9, lw=1,\
      label='t = {:.1e}s'.format(tarr[pltt[2]]))
 ax.legend(handles=[label_handle1, label_handle2, label_handle3], fontsize=10, loc='lower left')
-ax.annotate('params: Ttde{:.2e}K_tdur{:.2e}s_nH0{:.2e}_nHpower{:.2f}_lamb0{:d}um'.format(T_tde, tdur, nH0, densprof, lamb0),\
+ax.annotate('{}_T{:.0e}_tdur{:.0e}_nH0{:.1f}_params{:.1f}{:.1f}'.format(name, T_tde, tdur, nH0, alpha, beta),\
         xy=(0.5, 0.01), xycoords='figure fraction',\
         xytext=(0.5, 0), textcoords= 'figure fraction', \
         horizontalalignment='center', verticalalignment='bottom', size=13)
